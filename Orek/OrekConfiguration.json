@@ -1,0 +1,12 @@
+﻿{
+    "Name": "Orek_ServiceWatcher",
+    "TimeOut":  5000,
+    "ManagedServices": [
+        {
+            "WindowsServiceName": "seclogon",
+            "ConsulServiceName": "Secondary Logon",
+            "Timeout": 5000,
+            "Limit":  1
+        }
+    ]
+}
