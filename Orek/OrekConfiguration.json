@@ -6,7 +6,13 @@
             "WindowsServiceName": "seclogon",
             "ConsulServiceName": "Secondary Logon",
             "Timeout": 5000,
-            "Limit":  1
+            "Limit": 1
+        },
+        {
+            "WindowsServiceName": "SNMPTRAP",
+            "ConsulServiceName": "SNMP Trap",
+            "Timeout": 5000,
+            "Limit":  2
         }
     ]
 }
