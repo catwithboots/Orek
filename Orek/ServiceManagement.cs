@@ -1,11 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Security;
 using System.ServiceProcess;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -161,15 +159,6 @@ namespace Orek
             });
         }
         /// <summary>
-        /// Cleanups the service and related components form Consul.
-        /// </summary>
-        /// <param name="svc">The managed service.</param>
-        private void CleanupService(ManagedService svc)
-        {
-            MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
-            DeRegisterService(svc.ConsulServiceName);
-        }
-        /// <summary>
         /// Checks if the service status is "Running" and puts either a Pass or a Fail to the TTL Check
         /// </summary>
         /// <param name="svc">The managed service.</param>
@@ -196,7 +185,7 @@ namespace Orek
             MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
             try
             {
-                PermissionSet ps = GetServicePermission(svc);
+                GetServicePermission(svc);
             }
             catch (Exception ex)
             {
@@ -215,10 +204,9 @@ namespace Orek
             _consulClient.Agent.PassTTL(svc.ConsulServiceName + "_Ready", stat);
             return true;
         }
-        private bool StopService(ManagedService svc)
+        private void StopService(ManagedService svc)
         {
             MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
-            bool stopped = false;
             try
             {
                 PermissionSet ps = GetServicePermission(svc);
@@ -242,12 +230,10 @@ namespace Orek
                     sc.Stop();
                 }
                 sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10.0));
-                stopped = sc.Status == ServiceControllerStatus.Stopped;
-                if (!stopped) MyLogger.Error("Service did not stop correctly, current status: {0}", sc.Status);
+                if (sc.Status != ServiceControllerStatus.Stopped) MyLogger.Error("Service did not stop correctly, current status: {0}", sc.Status);
             }
             sc.Close();
             CodeAccessPermission.RevertAssert();
-            return stopped;
         }
         /// <summary>
         /// Gets the service control permission.
@@ -259,11 +245,11 @@ namespace Orek
         {
             MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
             // Creates a permission set that allows no access to the resource. 
-            System.Security.PermissionSet ps = new System.Security.PermissionSet(System.Security.Permissions.PermissionState.None);
+            PermissionSet ps = new PermissionSet(System.Security.Permissions.PermissionState.None);
             // Sets the security permission flag to use for this permission set.
             ps.AddPermission(new System.Security.Permissions.SecurityPermission(System.Security.Permissions.SecurityPermissionFlag.Assertion));
             // Initializes a new instance of the System.ServiceProcess.ServiceControllerPermission class.
-            ps.AddPermission(new System.ServiceProcess.ServiceControllerPermission(ServiceControllerPermissionAccess.Control, Environment.MachineName, svc.WindowsServiceName));
+            ps.AddPermission(new ServiceControllerPermission(ServiceControllerPermissionAccess.Control, Environment.MachineName, svc.WindowsServiceName));
             ps.Demand();
             return ps;
         }       
