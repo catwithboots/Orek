@@ -1,25 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Diagnostics;
-using System.Linq;
-using System.Net.NetworkInformation;
+using System.Linq.Expressions;
 using System.Reflection;
-using System.Security.Policy;
 using System.ServiceProcess;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using Consul;
-using NLog;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Orek
 {
-    public partial class Service : ServiceBase
+    public partial class OrekService
     {
         private Client _consulClient;
-        private bool _consulEnabled;
 
         private bool CreateConsulClient()
         {
@@ -40,7 +34,7 @@ namespace Orek
             return true;
         }
 
-        private bool RegisterSvcInConsul(string name)
+        private bool RegisterService(string name)
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             try
@@ -61,7 +55,7 @@ namespace Orek
             }
         }
 
-        private bool DeRegisterSvcInConsul(string name)
+        private bool DeRegisterService(string name)
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             try
@@ -78,25 +72,7 @@ namespace Orek
             }
         }
 
-        private void OrekHeartbeat()
-        {
-            MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
-            while (true)
-            {
-                try
-                {
-                    _consulClient.Agent.PassTTL(_config.Name + "_Running", "is running");
-                }
-                catch (Exception ex)
-                {
-                    MyLogger.Error("Error sending heartbeat: {0}", ex.Message);
-                    MyLogger.Debug(ex);
-                }
-                Thread.Sleep(2500);
-            }
-        }
-
-        internal bool RegisterServiceRunningCheck(string name)
+        internal bool RegisterServiceRunningCheck(string name,int ttl)
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             AgentCheckRegistration cr = new AgentCheckRegistration
@@ -104,7 +80,7 @@ namespace Orek
                 ID = name + "_Running",
                 //Name = name + "_Running",
                 Name = "Run Status",
-                TTL = TimeSpan.FromSeconds(5),
+                TTL = TimeSpan.FromMilliseconds(ttl),
                 Notes = "Status of service " + name,
                 ServiceID = name
             };
@@ -150,7 +126,7 @@ namespace Orek
             MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
             if (svc.Semaphore != null) try { svc.Semaphore.Destroy(); }
                 catch (SemaphoreInUseException) { }
-            var _semaphoreOptions = new SemaphoreOptions(svc.ConsulServiceName + "/Semaphore", svc.Limit) { SessionName = svc.ConsulServiceName + "_Session", SessionTTL = TimeSpan.FromSeconds(10) };
+            var _semaphoreOptions = new SemaphoreOptions(_config.KVPrefix + svc.ConsulServiceName + _config.SemaPrefix, svc.Limit) { SessionName = svc.ConsulServiceName + "_Session", SessionTTL = TimeSpan.FromSeconds(10) };
             svc.Semaphore = _consulClient.Semaphore(_semaphoreOptions);
         }
 
@@ -170,12 +146,21 @@ namespace Orek
                     MyLogger.Debug("Trying to destroy the semaphore");
                     svc.Semaphore.Destroy();
                     MyLogger.Debug("Trying to delete the semaphore tree");
-                    _consulClient.KV.DeleteTree(svc.ConsulServiceName + "/Semaphore");
+                    _consulClient.KV.DeleteTree(_config.KVPrefix + svc.ConsulServiceName + _config.SemaPrefix);
                 }
                 catch (SemaphoreInUseException)
                 {
                     MyLogger.Debug("Semaphore was still in use");
                 }
+        }
+
+        private KVPair MonitorKV(string path, ulong index)
+        {
+            MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
+            QueryOptions myQueryOptions = new QueryOptions() { WaitIndex = index };
+            var qr = _consulClient.KV.Get(path, myQueryOptions);
+            if (qr != null) return qr.Response;
+            return null;
         }
     }
 }

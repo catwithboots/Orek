@@ -14,6 +14,7 @@ namespace Orek
         public string WindowsServiceName { get; set; }
         public string ConsulServiceName { get; set; }
         public int Timeout { get; set; }
+        public int HeartBeatTTL { get; set; }
         public int Limit { get; set; }
 
         //Running Values

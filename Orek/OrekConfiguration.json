@@ -1,18 +1,9 @@
 ﻿{
-    "Name": "Orek_ServiceWatcher",
-    "TimeOut":  5000,
-    "ManagedServices": [
-        {
-            "WindowsServiceName": "seclogon",
-            "ConsulServiceName": "Secondary Logon",
-            "Timeout": 5000,
-            "Limit": 1
-        },
-        {
-            "WindowsServiceName": "SNMPTRAP",
-            "ConsulServiceName": "SNMP Trap",
-            "Timeout": 5000,
-            "Limit":  2
-        }
-    ]
+    "Name": "OREK",
+    "TimeOut": 5000,
+    "HeartBeatTTL":  5000,
+    "KVPrefix": "Services/",
+    "SemaPrefix": "/Semaphore",
+    "ConfPrefix": "Conf/",
+    "ManagedServices": []
 }
