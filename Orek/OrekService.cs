@@ -45,9 +45,9 @@ namespace Orek
             // Register the Orek Service in Consul
             RegisterService(_config.Name);
             // Register the heartbeat check
-            RegisterServiceRunningCheck(_config.Name,_config.HeartBeatTTL);
+            RegisterServiceRunningCheck(_config.Name,_config.HeartBeatTtl);
             //Create and start the heartbeat thread
-            StartHeartBeat(_config.HeartBeatTTL);
+            StartHeartBeat(_config.HeartBeatTtl);
             StartMonitorConfig();
             //Give a bit time to get the initial config
             Thread.Sleep(1000);
@@ -66,7 +66,7 @@ namespace Orek
             // Set flag to false
             _shouldStop = true;
             // Wait for ManageService Threads to exit within the timeout or kill them
-            StopMonitorConfig(_config.TimeOut);
+            StopMonitorConfig();
             StopServiceManagement();
             //stop the heartbeat
             StopHeartBeat(_config.TimeOut);

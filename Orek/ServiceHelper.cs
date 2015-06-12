@@ -25,7 +25,7 @@ namespace Orek
 
         [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern IntPtr OpenService(
-            IntPtr hSCManager, string lpServiceName, uint dwDesiredAccess);
+            IntPtr hScManager, string lpServiceName, uint dwDesiredAccess);
 
         [DllImport("advapi32.dll", EntryPoint = "OpenSCManagerW", ExactSpelling = true, CharSet = CharSet.Unicode,
             SetLastError = true)]
@@ -33,19 +33,19 @@ namespace Orek
             string machineName, string databaseName, uint dwAccess);
 
         [DllImport("advapi32.dll", EntryPoint = "CloseServiceHandle")]
-        public static extern int CloseServiceHandle(IntPtr hSCObject);
+        public static extern int CloseServiceHandle(IntPtr hScObject);
 
-        private const uint SERVICE_NO_CHANGE = 0xFFFFFFFF;
-        private const uint SERVICE_QUERY_CONFIG = 0x00000001;
-        private const uint SERVICE_CHANGE_CONFIG = 0x00000002;
-        private const uint SC_MANAGER_ALL_ACCESS = 0x000F003F;
-        private const uint SC_MANAGER_CONNECT = 0x0001;
-        private const uint SC_MANAGER_ENUMERATE_SERVICE = 0x0004;
+        private const uint ServiceNoChange = 0xFFFFFFFF;
+        private const uint ServiceQueryConfig = 0x00000001;
+        private const uint ServiceChangeConfig = 0x00000002;
+        private const uint ScManagerAllAccess = 0x000F003F;
+        private const uint ScManagerConnect = 0x0001;
+        private const uint ScManagerEnumerateService = 0x0004;
 
         public static void ChangeStartMode(ServiceController svc, ServiceStartMode mode)
         {
             //var scManagerHandle = OpenSCManager(null, null, SC_MANAGER_CONNECT + SC_MANAGER_ENUMERATE_SERVICE);
-            var scManagerHandle = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
+            var scManagerHandle = OpenSCManager(null, null, ScManagerAllAccess);
             if (scManagerHandle == IntPtr.Zero)
             {
                 throw new ExternalException("Open Service Manager Error");
@@ -54,7 +54,7 @@ namespace Orek
             var serviceHandle = OpenService(
                 scManagerHandle,
                 svc.ServiceName,
-                SERVICE_QUERY_CONFIG | SERVICE_CHANGE_CONFIG);
+                ServiceQueryConfig | ServiceChangeConfig);
 
             if (serviceHandle == IntPtr.Zero)
             {
@@ -63,9 +63,9 @@ namespace Orek
 
             var result = ChangeServiceConfig(
                 serviceHandle,
-                SERVICE_NO_CHANGE,
+                ServiceNoChange,
                 (uint) mode,
-                SERVICE_NO_CHANGE,
+                ServiceNoChange,
                 null,
                 null,
                 IntPtr.Zero,

@@ -57,7 +57,7 @@ namespace Orek
 
         private bool DeRegisterService(string name)
         {
-            MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
+            MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, name);
             try
             {
                 _consulClient.Agent.ServiceDeregister(name);
@@ -126,8 +126,10 @@ namespace Orek
             MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
             if (svc.Semaphore != null) try { svc.Semaphore.Destroy(); }
                 catch (SemaphoreInUseException) { }
-            var _semaphoreOptions = new SemaphoreOptions(_config.KVPrefix + svc.ConsulServiceName + _config.SemaPrefix, svc.Limit) { SessionName = svc.ConsulServiceName + "_Session", SessionTTL = TimeSpan.FromSeconds(10) };
-            svc.Semaphore = _consulClient.Semaphore(_semaphoreOptions);
+                catch (Exception) { }
+            var semaphoreOptions = new SemaphoreOptions(_config.KvPrefix + svc.ConsulServiceName + _config.SemaPrefix,
+                svc.Limit) { SessionName = svc.ConsulServiceName + "_Session", SessionTTL = TimeSpan.FromSeconds(10) };
+            svc.Semaphore = _consulClient.Semaphore(semaphoreOptions);
         }
 
         internal void CleanUpSemaphore(ManagedService svc)
@@ -146,7 +148,7 @@ namespace Orek
                     MyLogger.Debug("Trying to destroy the semaphore");
                     svc.Semaphore.Destroy();
                     MyLogger.Debug("Trying to delete the semaphore tree");
-                    _consulClient.KV.DeleteTree(_config.KVPrefix + svc.ConsulServiceName + _config.SemaPrefix);
+                    _consulClient.KV.DeleteTree(_config.KvPrefix + svc.ConsulServiceName + _config.SemaPrefix);
                 }
                 catch (SemaphoreInUseException)
                 {
@@ -154,7 +156,7 @@ namespace Orek
                 }
         }
 
-        private KVPair MonitorKV(string path, ulong index)
+        private KVPair MonitorKv(string path, ulong index)
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             QueryOptions myQueryOptions = new QueryOptions() { WaitIndex = index };

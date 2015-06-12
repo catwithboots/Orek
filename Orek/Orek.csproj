@@ -82,6 +82,9 @@
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="ManagedService.cs" />
+    <Compile Include="MonitorConfig.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="OrekService.cs">
       <SubType>Component</SubType>
     </Compile>
