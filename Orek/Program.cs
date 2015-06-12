@@ -19,10 +19,10 @@ namespace Orek
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             MyLogger.Info("Start");
-            Service orekService = null;
+            OrekService orekService = null;
             try
             {
-                orekService = new Service();
+                orekService = new OrekService();
             }
             catch (Exception ex)
             {

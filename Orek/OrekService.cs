@@ -1,40 +1,35 @@
 ﻿using System;
-using System.CodeDom;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Diagnostics;
-using System.Linq;
-using System.Net.NetworkInformation;
 using System.Reflection;
 using System.ServiceProcess;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using NLog;
 
 namespace Orek
 {
-    public partial class Service : ServiceBase
+    public partial class OrekService : ServiceBase
     {
-        private Thread _haertbeatThread;
-        //private Thread _actionThread;
+        private Thread _heartbeatThread;
+        private Thread _monitorConfigThread;
+        private Thread _serviceManagementThread;
         private static readonly Logger MyLogger = Program.MyLogger;
-        private Configuration _config;
-        private bool _doAction;
-        public Service()
+        private readonly Configuration _config;
+        private volatile bool _shouldStop;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="OrekService"/> class.
+        /// </summary>
+        /// <exception cref="System.Exception">
+        /// ConsulClient initiation failed, Check if local Consul Agent is running
+        /// or
+        /// Reading or parsing configfile failed
+        /// </exception>
+        public OrekService()
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
-            if (CreateConsulClient())
-            {
-                _consulEnabled = true;
-            }
-            else
-            {
-                throw new Exception("ConsulClient initiation failed, Check if local Consul Agent is running");
-            };
-            _config = ReadConfiguration();
-            InitializeComponent();
+            if (!CreateConsulClient()) throw new Exception("ConsulClient initiation failed, Check if local Consul Agent is running");
+            try { _config = ReadConfiguration(); }
+            catch (Exception ex) { throw new Exception("Reading or parsing configfile failed",ex);}            
         }
 
         /// <summary>
@@ -46,30 +41,39 @@ namespace Orek
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);                     
             MyLogger.Info("Starting Service");
             // Set flag to true
-            _doAction = true;
-            // Register the Orek Service and Heartbeat in Consul
-            RegisterSvcInConsul(_config.Name);
-            // Register and Start the Orek Heartbeat thread
-            RegisterServiceRunningCheck(_config.Name);
-            //RegisterOrekHeartbeatCheck();
-            _haertbeatThread=new Thread(OrekHeartbeat);
-            _haertbeatThread.Start();
-            //For each managed service start managing the service
-            StartManagingServices();
-        }        
+            _shouldStop = false;
+            // Register the Orek Service in Consul
+            RegisterService(_config.Name);
+            // Register the heartbeat check
+            RegisterServiceRunningCheck(_config.Name,_config.HeartBeatTtl);
+            //Create and start the heartbeat thread
+            StartHeartBeat(_config.HeartBeatTtl);
+            StartMonitorConfig();
+            //Give a bit time to get the initial config
+            Thread.Sleep(1000);
+            //Start the manageServices Thread
+            StartServiceManagement();
+            MyLogger.Debug("Onstart Completed");
+        }
 
+        /// <summary>
+        /// When implemented in a derived class, executes when a Stop command is sent to the service by the Service Control Manager (SCM). Specifies actions to take when a service stops running.
+        /// </summary>
         protected override void OnStop()
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             MyLogger.Info("Stopping Service");
             // Set flag to false
-            _doAction = false;
+            _shouldStop = true;
             // Wait for ManageService Threads to exit within the timeout or kill them
-            StopManagingServices();
+            StopMonitorConfig();
+            StopServiceManagement();
             //stop the heartbeat
-            _haertbeatThread.Abort();
+            StopHeartBeat(_config.TimeOut);
             //derigister the orek service (which includes the heartbeatcheck)
-            DeRegisterSvcInConsul(_config.Name);
+            DeRegisterService(_config.Name);
+
+            MyLogger.Debug("OnStop Completed");
         }
 
         /// <summary>
@@ -89,5 +93,6 @@ namespace Orek
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             OnStop();
         }
+
     }
 }

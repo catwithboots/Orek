@@ -1,13 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
-using System.ServiceProcess;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Orek
 {
@@ -15,10 +9,15 @@ namespace Orek
     {
         public string Name { get; set; }
         public int TimeOut { get; set; }
-        public List<ManagedService> ManagedServices { get; set; }
+        public int HeartBeatTtl { get; set; }
+        public string KvPrefix { get; set; }
+        public string SemaPrefix { get; set; }
+        public string ConfPrefix { get; set; }
+        //public List<ManagedService> ManagedServices { get; set; }
+        public List<ServiceDef> ManagedServices { get; set; }
     }
 
-    public partial class Service : ServiceBase
+    public partial class OrekService
     {
         private const string ConfigFile = "OrekConfiguration.json";
 
@@ -29,6 +28,6 @@ namespace Orek
             var result = JsonConvert.DeserializeObject<Configuration>(streamReader.ReadToEnd());
             streamReader.Close();
             return result;
-        }
+        }        
     }
 }

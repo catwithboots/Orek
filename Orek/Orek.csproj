@@ -78,12 +78,15 @@
     <Compile Include="ConsulActions.cs">
       <SubType>Component</SubType>
     </Compile>
-    <Compile Include="ManagedService.cs" />
-    <Compile Include="OrekService.cs">
+    <Compile Include="Heartbeat.cs">
       <SubType>Component</SubType>
     </Compile>
-    <Compile Include="OrekService.Designer.cs">
-      <DependentUpon>OrekService.cs</DependentUpon>
+    <Compile Include="ManagedService.cs" />
+    <Compile Include="MonitorConfig.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="OrekService.cs">
+      <SubType>Component</SubType>
     </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
