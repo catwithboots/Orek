@@ -53,6 +53,7 @@ namespace Orek
                 {
                     MyLogger.Error("Error sending heartbeat: {0}", ex.Message);
                     MyLogger.Debug(ex);
+                    _shouldStop = true;
                 }
                 Thread.Sleep(ttl/2);
             } 

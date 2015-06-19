@@ -146,5 +146,61 @@ namespace Orek
                     return "Status Changing";
             }
         }
+
+        /// <summary>
+        /// Starts the service.
+        /// </summary>
+        /// <param name="serviceName">Name of the service.</param>
+        /// <returns></returns>
+        /// <exception cref="System.Security.SecurityException">when the permission cannot be acquired</exception>
+        public static bool StartService(string serviceName)
+        {
+            PermissionSet ps = GetServicePermission(serviceName);
+            ps.Assert();  
+            ServiceController sc = new ServiceController(serviceName);
+            if (!((sc.Status == ServiceControllerStatus.Running) || (sc.Status == ServiceControllerStatus.StartPending))) sc.Start();            
+            sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(30));
+            bool result = sc.Status == ServiceControllerStatus.Running;
+            sc.Close();
+            CodeAccessPermission.RevertAssert();
+            return result;
+        }
+
+        /// <summary>
+        /// Stops the service.
+        /// </summary>
+        /// <param name="serviceName">Name of the service.</param>
+        /// <returns></returns>
+        /// <exception cref="System.Security.SecurityException">when the permission cannot be acquired</exception>
+        public static bool StopService(string serviceName)
+        {
+            PermissionSet ps = GetServicePermission(serviceName);
+            ps.Assert();            
+            ServiceController sc = new ServiceController(serviceName, Environment.MachineName);
+            if (!((sc.Status == ServiceControllerStatus.Stopped)||(sc.Status == ServiceControllerStatus.StopPending))) sc.Stop();            
+            sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(30));
+            bool result = sc.Status == ServiceControllerStatus.Stopped;            
+            sc.Close();
+            CodeAccessPermission.RevertAssert();
+            return result;
+        }
+
+        /// <summary>
+        /// Gets the service control permission.
+        /// </summary>
+        /// <param name="svc">The SVC.</param>
+        /// <returns></returns>
+        /// <exception cref="System.Security.SecurityException">when the permission cannot be acquired</exception>
+        public static PermissionSet GetServicePermission(string serviceName)
+        {
+            // Creates a permission set that allows no access to the resource. 
+            PermissionSet ps = new PermissionSet(System.Security.Permissions.PermissionState.None);
+            // Sets the security permission flag to use for this permission set.
+            ps.AddPermission(new System.Security.Permissions.SecurityPermission(System.Security.Permissions.SecurityPermissionFlag.Assertion));
+            // Initializes a new instance of the System.ServiceProcess.ServiceControllerPermission class.
+            ps.AddPermission(new ServiceControllerPermission(ServiceControllerPermissionAccess.Control, Environment.MachineName, serviceName));
+            ps.Demand();
+            return ps;
+        }
     }
 }

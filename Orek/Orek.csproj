@@ -90,6 +90,9 @@
     </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Service.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="ServiceHelper.cs" />
     <Compile Include="ServiceManagement.cs">
       <SubType>Component</SubType>

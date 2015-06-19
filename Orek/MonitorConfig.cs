@@ -81,6 +81,12 @@ namespace Orek
                 {
                     MyLogger.Trace("Some Error: {0}", ex.Message);
                     MyLogger.Trace(ex);
+                    //if ((ex.InnerException != null) &&
+                    //    (ex.InnerException.Message == "Unable to connect to the remote server"))
+                    //{
+                        MyLogger.Error("Error communicating with consul, stopping");
+                        _shouldStop = true;
+                    //}
                 }
 
             }

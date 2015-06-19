@@ -14,6 +14,7 @@ namespace Orek
         private Thread _serviceManagementThread;
         private static readonly Logger MyLogger = Program.MyLogger;
         private readonly Configuration _config;
+        private readonly OnlineConfig _onlineConfig;
         private volatile bool _shouldStop;
 
         /// <summary>
@@ -24,11 +25,14 @@ namespace Orek
         /// or
         /// Reading or parsing configfile failed
         /// </exception>
-        public OrekService()
+        public OrekService(string rootPath = "Services/OREK",bool createConfig=true)
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             if (!CreateConsulClient()) throw new Exception("ConsulClient initiation failed, Check if local Consul Agent is running");
-            try { _config = ReadConfiguration(); }
+            if (!CheckOnlineConfig(rootPath) && createConfig) CreateOnlineConfig(rootPath);
+            try { _onlineConfig = GetOnlineConfig(rootPath); }
+            catch (Exception ex) { throw new Exception("Reading or parsing configfile failed", ex); }  
+            try { _config = ReadConfigurationFile(); }
             catch (Exception ex) { throw new Exception("Reading or parsing configfile failed",ex);}            
         }
 
@@ -43,16 +47,21 @@ namespace Orek
             // Set flag to true
             _shouldStop = false;
             // Register the Orek Service in Consul
-            RegisterService(_config.Name);
+            //RegisterService(_config.Name);
+            RegisterService("OREK");
             // Register the heartbeat check
-            RegisterServiceRunningCheck(_config.Name,_config.HeartBeatTtl);
+            //RegisterServiceRunningCheck(_config.Name, _config.HeartBeatTtl);
+            RegisterServiceRunningCheck("OREK", _onlineConfig.OrekSettings.HeartBeatTtl);
             //Create and start the heartbeat thread
-            StartHeartBeat(_config.HeartBeatTtl);
-            StartMonitorConfig();
+            //StartHeartBeat(_config.HeartBeatTtl);
+            //StartHeartBeat(_onlineConfig.OrekSettings.HeartBeatTtl);
+
+            //StartMonitorConfig();
             //Give a bit time to get the initial config
             Thread.Sleep(1000);
+            StartService();
             //Start the manageServices Thread
-            StartServiceManagement();
+            //StartServiceManagement();
             MyLogger.Debug("Onstart Completed");
         }
 
@@ -66,12 +75,13 @@ namespace Orek
             // Set flag to false
             _shouldStop = true;
             // Wait for ManageService Threads to exit within the timeout or kill them
-            StopMonitorConfig();
-            StopServiceManagement();
+            //StopMonitorConfig();
+            //StopServiceManagement();
             //stop the heartbeat
-            StopHeartBeat(_config.TimeOut);
+            //StopHeartBeat(_config.TimeOut);
+            StopService();
             //derigister the orek service (which includes the heartbeatcheck)
-            DeRegisterService(_config.Name);
+            DeRegisterService("OREK");
 
             MyLogger.Debug("OnStop Completed");
         }

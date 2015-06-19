@@ -19,9 +19,11 @@ namespace Orek
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             string agentname;
+            Consul.Config consulConfig = new Config();
+            //consulConfig.WaitTime = TimeSpan.FromSeconds(100);        
             try
             {
-                _consulClient = new Client();
+                _consulClient = new Client(consulConfig);                
                 agentname = _consulClient.Agent.NodeName;
             }
             catch (Exception ex)

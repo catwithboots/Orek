@@ -23,6 +23,7 @@ namespace Orek
         public System.Threading.Thread MonitorThread { get; set; }
         public System.Threading.Thread GetLockThread { get; set; }
         public System.Threading.Thread RunThread { get; set; }
+        public System.Threading.Thread ManageThread { get; set; }
     }
 
     class ServiceComparer : IEqualityComparer<ServiceDef>

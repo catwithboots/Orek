@@ -1,11 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.Eventing.Reader;
 using System.Linq;
 using System.Reflection;
 using System.Security;
 using System.ServiceProcess;
 using System.Threading;
 using System.Threading.Tasks;
+using Consul;
+using Semaphore = System.Threading.Semaphore;
 
 namespace Orek
 {
@@ -49,7 +52,7 @@ namespace Orek
                 MyLogger.Trace("thread did not reach stopped state within timeout, aborting thread");
                 _serviceManagementThread.Abort();
             }
-        }        
+        }
         #endregion ServiceManagement Main Thread Methods
 
         #region ServiceManagement Main Method
@@ -68,10 +71,15 @@ namespace Orek
                     StopManagingServices(servicesToRemove);
                     StartManagingServices(servicesToAdd);
                     _configChanged = false;
-                } else Thread.Sleep(5000);
+                }
+                else Thread.Sleep(5000);
             }
             StopManagingServices(_managedServices);
+            MyLogger.Info("ServiceManagement Thread ended, exiting program");
+            Environment.Exit(2);
         }
+
+        
 
         /// <summary>
         /// Gets the services from first but not in second list.
@@ -144,12 +152,15 @@ namespace Orek
                 //Register the Service Ready Check
                 RegisterServiceReadyCheck(svc.ConsulServiceName);
                 //Start monitoring the service; 
-                var service = svc;
-                svc.MonitorThread = new Thread(() => MonitorService(service));
+                svc.ShouldRun = true;
+                //var service = svc;
+                svc.MonitorThread = new Thread(() => MonitorService(svc));
                 svc.MonitorThread.Start();
                 //Start the Standby mode thread which will start the active thread when needed and possible 
-                svc.GetLockThread = new Thread(() => Standby(service));
-                svc.GetLockThread.Start();
+                //svc.GetLockThread = new Thread(() => Standby(service));
+                //svc.GetLockThread.Start();
+                svc.ManageThread = new Thread(() => Manage(svc));
+                svc.ManageThread.Start();
                 _managedServices.Add(svc);
                 MyLogger.Trace("Exiting {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
             });
@@ -166,7 +177,18 @@ namespace Orek
                 if (svc.MonitorThread != null) svc.MonitorThread.Abort();
                 MyLogger.Trace("MonitorThread for {0} stopped", svc.ConsulServiceName);
                 svc.ShouldRun = false;
-                StopService(svc);
+                MyLogger.Trace("Stopping service {0}", svc.WindowsServiceName);
+                try
+                {
+                    if (ServiceHelper.StopService(svc.WindowsServiceName))
+                        MyLogger.Info("Service {0} Stopped", svc.WindowsServiceName);
+                    else MyLogger.Error("Service {0} did not stop within 30 seconds");
+                }
+                catch (Exception ex)
+                {
+                    MyLogger.Error("Error stopping service {0}: {1}", svc.WindowsServiceName, ex.Message);
+                    MyLogger.Debug(ex);
+                }
                 CleanUpSemaphore(svc);
                 if (svc.RunThread != null) svc.RunThread.Abort();
                 MyLogger.Trace("Getlockthread for {0} stopped", svc.ConsulServiceName);
@@ -202,7 +224,7 @@ namespace Orek
             MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
             try
             {
-                GetServicePermission(svc);
+                ServiceHelper.GetServicePermission(svc.WindowsServiceName);
             }
             catch (Exception ex)
             {
@@ -221,55 +243,8 @@ namespace Orek
             _consulClient.Agent.PassTTL(svc.ConsulServiceName + "_Ready", stat);
             return true;
         }
-        private void StopService(ManagedService svc)
-        {
-            MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
-            try
-            {
-                PermissionSet ps = GetServicePermission(svc);
-                ps.Assert();
-            }
-            catch (Exception ex)
-            {
-                MyLogger.Error("Cannot aquire service control permisison: {0}", ex.Message);
-                MyLogger.Debug(ex);
-            }
-            ServiceController sc = new ServiceController(svc.WindowsServiceName, Environment.MachineName);
-            if (sc.Status != ServiceControllerStatus.Stopped)
-            {
-                if (sc.Status == ServiceControllerStatus.StopPending)
-                {
-                    MyLogger.Debug("Stop pending");
-                }
-                else
-                {
-                    MyLogger.Info("Service {0} send stop command", svc.WindowsServiceName);
-                    sc.Stop();
-                }
-                sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10.0));
-                if (sc.Status != ServiceControllerStatus.Stopped) MyLogger.Error("Service did not stop correctly, current status: {0}", sc.Status);
-            }
-            sc.Close();
-            CodeAccessPermission.RevertAssert();
-        }
-        /// <summary>
-        /// Gets the service control permission.
-        /// </summary>
-        /// <param name="svc">The SVC.</param>
-        /// <returns></returns>
-        /// <exception cref="System.Security.SecurityException">when the permission cannot be acquired</exception>
-        private PermissionSet GetServicePermission(ManagedService svc)
-        {
-            MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
-            // Creates a permission set that allows no access to the resource. 
-            PermissionSet ps = new PermissionSet(System.Security.Permissions.PermissionState.None);
-            // Sets the security permission flag to use for this permission set.
-            ps.AddPermission(new System.Security.Permissions.SecurityPermission(System.Security.Permissions.SecurityPermissionFlag.Assertion));
-            // Initializes a new instance of the System.ServiceProcess.ServiceControllerPermission class.
-            ps.AddPermission(new ServiceControllerPermission(ServiceControllerPermissionAccess.Control, Environment.MachineName, svc.WindowsServiceName));
-            ps.Demand();
-            return ps;
-        }       
+        
+        
         #endregion Single Service Management Methods
 
         #region Single Service Management Thread Methods
@@ -283,11 +258,21 @@ namespace Orek
             //Should we continue or is the Orek service stopping
             while (!_shouldStop)
             {
-                //Check if service is ready
-                svc.CanRun = CheckServiceReady(svc);
-                //Check if service is running
-                CheckServiceRunning(svc);
-                Thread.Sleep(1000);
+                try
+                {
+                    //Check if service is ready
+                    svc.CanRun = CheckServiceReady(svc);
+                    //Check if service is running
+                    CheckServiceRunning(svc);
+                }
+                catch
+                {
+                    MyLogger.Error("Error monitoring service {0}",svc.WindowsServiceName);
+                }
+                finally
+                {
+                    Thread.Sleep(1000);
+                }
             }
         }
         /// <summary>
@@ -361,18 +346,48 @@ namespace Orek
             }
             if (!svc.ShouldRun || _shouldStop)
             {
-                if (ServiceHelper.GetServiceStatus(svc.WindowsServiceName) == "Running") StopService(svc);
+                if (ServiceHelper.GetServiceStatus(svc.WindowsServiceName) == "Running")
+                {
+                    MyLogger.Trace("Stopping service {0}", svc.WindowsServiceName);
+                    try
+                    {
+                        if (ServiceHelper.StopService(svc.WindowsServiceName))
+                            MyLogger.Info("Service {0} Stopped", svc.WindowsServiceName);
+                        else MyLogger.Error("Service {0} did not stop within 30 seconds");
+                    }
+                    catch (Exception ex)
+                    {
+                        MyLogger.Error("Error stopping service {0}: {1}", svc.WindowsServiceName, ex.Message);
+                        MyLogger.Debug(ex);
+                    }
+                }
                 if (svc.Semaphore.IsHeld) svc.Semaphore.Release();
-            } else {
+            }
+            else
+            {
                 MyLogger.Info("Lock no longer held for {0}, waiting for service timeout before trying again", svc.WindowsServiceName);
                 //Release lock because it could be the lock isheld was set to false due to consistency timeout
                 try { svc.Semaphore.Release(); }
-                catch { MyLogger.Debug("Lock should not be held, but release said otherwise, probably due to cinsitency related timeout");}
-                if (ServiceHelper.GetServiceStatus(svc.WindowsServiceName) == "Running") StopService(svc);
+                catch { MyLogger.Debug("Lock should not be held, but release said otherwise, probably due to cinsitency related timeout"); }
+                if (ServiceHelper.GetServiceStatus(svc.WindowsServiceName) == "Running")
+                {
+                    MyLogger.Trace("Stopping service {0}", svc.WindowsServiceName);
+                    try
+                    {
+                        if (ServiceHelper.StopService(svc.WindowsServiceName))
+                            MyLogger.Info("Service {0} Stopped", svc.WindowsServiceName);
+                        else MyLogger.Error("Service {0} did not stop within 30 seconds");
+                    }
+                    catch (Exception ex)
+                    {
+                        MyLogger.Error("Error stopping service {0}: {1}", svc.WindowsServiceName, ex.Message);
+                        MyLogger.Debug(ex);
+                    }
+                }
                 Thread.Sleep(svc.Timeout);
                 svc.GetLockThread = new Thread(() => Standby(svc));
                 svc.GetLockThread.Start();
-            }           
+            }
         }
 
 
@@ -385,25 +400,39 @@ namespace Orek
         void Manage(ManagedService svc)
         {
             MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
-            while (!_shouldStop)
+            Consul.Semaphore semaphore = null;
+            while (!_shouldStop && svc.ShouldRun)
             {
-                svc.ShouldRun = false;
-                RegisterSemaphore(svc);
+
+                var semaphoreOptions = new SemaphoreOptions(_config.KvPrefix + svc.ConsulServiceName + _config.SemaPrefix,
+                    svc.Limit) { SessionName = svc.ConsulServiceName + "_Session", SessionTTL = TimeSpan.FromSeconds(10) };
+                
+                if (semaphore != null) try { semaphore.Destroy(); }
+                    catch (SemaphoreInUseException) { }
+                    catch (Exception) { }
+                semaphore = _consulClient.Semaphore(semaphoreOptions);
+                //RegisterSemaphore(svc);
+                
                 // Wait if service is ready to manage
                 if (!svc.CanRun) MyLogger.Info("Wait for service {0} to get in a ready state", svc.ConsulServiceName);
-                while (!_shouldStop && !svc.CanRun)
+                while (!_shouldStop && svc.ShouldRun && !svc.CanRun)
                 {
                     Thread.Sleep(1000);
                 }
-                MyLogger.Debug("Service {0} is ready, wait for lock", svc.ConsulServiceName);
+                //service canrun or shouldstop or not shouldrun
+                if (!_shouldStop) MyLogger.Debug("Service {0} is ready, wait for lock", svc.ConsulServiceName);
                 while (!_shouldStop &&
-                       (svc.Semaphore != null) &&
-                       !svc.Semaphore.IsHeld)
+                       svc.ShouldRun &&
+                       //(svc.Semaphore != null) &&
+                       //!svc.Semaphore.IsHeld)
+                       (semaphore != null) &&
+                       !semaphore.IsHeld)
                 {
                     MyLogger.Info("Acquiring lock on semaphore for {0}", svc.ConsulServiceName);
                     try
                     {
-                        svc.Semaphore.Acquire();
+                        //svc.Semaphore.Acquire();
+                        semaphore.Acquire();
                     }
                     catch
                     {
@@ -411,14 +440,65 @@ namespace Orek
 
                     }
                 }
-                if (!_shouldStop)
+                //semaphore held or shouldstop or not shouldrun
+                //if (svc.Semaphore != null && (!_shouldStop && svc.ShouldRun && svc.Semaphore.IsHeld))
+                if (semaphore != null && (!_shouldStop && svc.ShouldRun && semaphore.IsHeld))
                 {
                     MyLogger.Info("Lock acquired, {0} becoming active", svc.ConsulServiceName);
-                    svc.ShouldRun = true;
-                    svc.RunThread = new Thread(() => Active(svc));
-                    svc.RunThread.Start();
+                    try
+                    {
+                        if (ServiceHelper.StartService(svc.WindowsServiceName))
+                            MyLogger.Info("Service {0} started", svc.WindowsServiceName);
+                        else MyLogger.Error("Service {0} did not start within 30 seconds", svc.WindowsServiceName);
+                    }
+                    catch (Exception ex)
+                    {
+                        MyLogger.Error("Error starting service {0}: {1}",svc.WindowsServiceName,ex.Message);
+                        MyLogger.Debug(ex);
+                    }
                 }
+                //while (svc.Semaphore != null && (!_shouldStop && svc.Semaphore.IsHeld && svc.ShouldRun))
+                while (semaphore != null && (!_shouldStop && semaphore.IsHeld && svc.ShouldRun))
+                {
+                    if (ServiceHelper.GetServiceStatus(svc.WindowsServiceName) != "Running")
+                    {
+                        MyLogger.Debug("Service not running, releasing lock");
+                        //if ((svc.Semaphore != null) && (svc.Semaphore.IsHeld)) svc.Semaphore.Release();
+                        if ((semaphore != null) && (semaphore.IsHeld)) semaphore.Release();
+                    }
+                    Thread.Sleep(1000);
+                }
+                //semaphore lost or shouldstop or not shouldrun
+                //if (svc.Semaphore != null && !svc.Semaphore.IsHeld) MyLogger.Info("Lock no longer held for {0}, waiting for service timeout", svc.WindowsServiceName);
+                if (semaphore != null && !semaphore.IsHeld)
+                {
+                    MyLogger.Info("Lock no longer held for {0}, waiting for service timeout", svc.WindowsServiceName);
+                }
+                if (ServiceHelper.GetServiceStatus(svc.WindowsServiceName) == "Running")
+                {
+                    MyLogger.Trace("Stopping service {0}",svc.WindowsServiceName);
+                    try
+                    {
+                        if (ServiceHelper.StopService(svc.WindowsServiceName))
+                            MyLogger.Info("Service {0} Stopped", svc.WindowsServiceName);
+                        else MyLogger.Error("Service {0} did not stop within 30 seconds");
+                    }
+                    catch (Exception ex)
+                    {
+                        MyLogger.Error("Error stopping service {0}: {1}", svc.WindowsServiceName, ex.Message);
+                        MyLogger.Debug(ex);
+                    }
+                }
+                //Release lock because it could be the lock isheld was set to false due to consistency timeout
+                //try { svc.Semaphore.Release(); }
+                try { semaphore.Release(); }
+                catch { MyLogger.Debug("Lock should not be held, but release said otherwise, probably due to consitency related timeout"); }
             }
+            //shouldstop or not svc.shouldrun
+            MyLogger.Info(
+                !svc.ShouldRun
+                    ? "Manage service stop signal detected, stopping Manage thread for {0}"
+                    : "Program Stop signal noticed, stopping Manage thread for {0}", svc.WindowsServiceName);
         }
         #endregion Single Service Management Thread Methods
     }
