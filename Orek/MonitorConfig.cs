@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -16,7 +17,7 @@ namespace Orek
         /// </summary>
         private void StartMonitorConfig()
         {
-            _monitorConfigThread = new Thread(MonitorConfig) {IsBackground = true};
+            _monitorConfigThread = new Thread(MonitorConfig) { IsBackground = true };
             _monitorConfigThread.Start();
         }
 
@@ -39,50 +40,54 @@ namespace Orek
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             ulong configIndex = 1;
-            string managedServicesKey = string.Format("{0}{1}/Nodes/{2}", _config.KvPrefix, _config.Name, _consulClient.Agent.NodeName);
-
+            string clusterskey = Config.NodeAssignmentPrefix + ConsulClient.Agent.NodeName;
             while (!_shouldStop)
             {
                 try
                 {
-                    MyLogger.Debug("Start monitoring KV {0} with index {1}",managedServicesKey,configIndex);
-                    KVPair kv = MonitorKv(managedServicesKey, configIndex);
-                    MyLogger.Debug("End monitoring KV {0} with index {1}", managedServicesKey, configIndex);
-                    
-                    // TODO GET list of managedservices and managedservice config separately!!!
-
-                    if ((kv != null)&&(configIndex!=kv.ModifyIndex))
+                    MyLogger.Debug("Start monitoring KV {0} with index {1}", clusterskey, configIndex);
+                    KVPair kv = MonitorKv(clusterskey, configIndex);
+                    MyLogger.Debug("End monitoring KV {0} with index {1}", clusterskey, configIndex);
+                    if ((kv != null) && (configIndex != kv.ModifyIndex))
                     {
                         configIndex = kv.ModifyIndex;
-                        dynamic responseobject =
-                            JsonConvert.DeserializeObject(Encoding.UTF8.GetString(kv.Value, 0, kv.Value.Length));
-                        JArray myarray = responseobject.ManagedServices;
-                        _newManagedServices = myarray.ToObject<List<ServiceDef>>();
-                        _configChanged = true;
-                        MyLogger.Info("ManagedService configuration has changed (index={0})", configIndex);
+                        Config.ClusterAssignments =
+                            JsonConvert.DeserializeObject<List<string>>(Encoding.UTF8.GetString(kv.Value, 0,
+                                kv.Value.Length));
+                        _configChanged =
+                            !(AssignedClusters.OrderBy(s => s)
+                                .SequenceEqual(Config.ClusterAssignments.OrderBy(s => s)));
+                        MyLogger.Info("Assigned cluster configuration has changed (index={0}): {1}", configIndex,
+                            _configChanged);
                     }
                     else if (kv == null)
                     {
-                        _newManagedServices = new List<ServiceDef>();
-                        if (configIndex != 1)
-                        {
-                            _configChanged = true;
-                            configIndex = 1;
-                            MyLogger.Info("ManagedService configuration has changed (index={0})", configIndex);
-                        }
+                        Config.ClusterAssignments = new List<string>();
+                        _configChanged =
+                            !(AssignedClusters.OrderBy(s => s)
+                                .SequenceEqual(Config.ClusterAssignments.OrderBy(s => s)));
+                        ;
+                        configIndex = 1;
+                        MyLogger.Info("Assigned cluster configuration has changed (index={0})", configIndex);
                     }
                     Thread.Sleep(5000);
                 }
                 catch (ThreadAbortException)
                 {
-                    MyLogger.Trace("Thread is aborting");
+                    MyLogger.Debug("MonitorConfig Thread is aborting");
+                }
+                catch (ApplicationException ex)
+                {
+                    if (ex.InnerException.Message == "The operation has timed out")
+                    {
+                        MyLogger.Debug("MonitorKV timed out");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    MyLogger.Trace("Some Error: {0}", ex.Message);
-                    MyLogger.Trace(ex);
+                    MyLogger.Error("Some Error: {0}", ex.Message);
+                    MyLogger.Debug(ex);
                 }
-
             }
         }
     }

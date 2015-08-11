@@ -6,6 +6,7 @@ using System.ServiceProcess;
 using System.Text;
 using System.Threading.Tasks;
 using NLog;
+using System.Windows.Forms;
 
 namespace Orek
 {
@@ -30,19 +31,34 @@ namespace Orek
                 MyLogger.Debug(ex);
                 Environment.Exit(1);
             }
-            if (Environment.UserInteractive)
+            if (args.Contains("-admin"))
             {
-                MyLogger.Debug("Userinteractive session found, starting on console..");
-                orekService.StartConsole(args);
-                Console.WriteLine("Press any key to stop program");
-                Console.Read();
-                MyLogger.Debug("Key pressed, stopping console run....");
-                orekService.StopConsole();
+                MyLogger.Info("Starting AdminGui");
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new AdminGui(orekService));
+                MyLogger.Info("AdminGui exited");
+                Console.WriteLine("Press any key to exit");
+                Console.ReadKey();
             }
             else
             {
-                MyLogger.Debug("Not Interactive Startup, starting as Service");                
-                ServiceBase.Run(orekService);
+                if (Environment.UserInteractive)
+                {
+                    MyLogger.Debug("Userinteractive session found, starting on console..");
+                    orekService.StartConsole(args);
+                    Console.WriteLine("Press any key to stop program");
+                    Console.Read();
+                    MyLogger.Debug("Key pressed, stopping console run....");
+                    orekService.StopConsole();
+                    Console.WriteLine("Press any key to exit");
+                    Console.ReadKey();
+                }
+                else
+                {
+                    MyLogger.Debug("Not Interactive Startup, starting as Service");
+                    ServiceBase.Run(orekService);
+                }
             }
             MyLogger.Info("Finished");
         }

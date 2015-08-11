@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.ServiceProcess;
@@ -13,7 +14,7 @@ namespace Orek
 {
     public partial class OrekService
     {
-        private Client _consulClient;
+        internal Client ConsulClient;
 
         private bool CreateConsulClient()
         {
@@ -21,8 +22,8 @@ namespace Orek
             string agentname;
             try
             {
-                _consulClient = new Client();
-                agentname = _consulClient.Agent.NodeName;
+                ConsulClient = new Client();
+                agentname = ConsulClient.Agent.NodeName;
             }
             catch (Exception ex)
             {
@@ -43,7 +44,7 @@ namespace Orek
                 {
                     Name = name
                 };
-                _consulClient.Agent.ServiceRegister(svcreg);
+                ConsulClient.Agent.ServiceRegister(svcreg);
                 MyLogger.Debug("{0} registered in Consul Services", name);
                 return true;
             }
@@ -60,7 +61,7 @@ namespace Orek
             MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, name);
             try
             {
-                _consulClient.Agent.ServiceDeregister(name);
+                ConsulClient.Agent.ServiceDeregister(name);
                 MyLogger.Debug("{0} deregistered from Consul Services", name);
                 return true;
             }
@@ -72,7 +73,7 @@ namespace Orek
             }
         }
 
-        internal bool RegisterServiceRunningCheck(string name,int ttl)
+        internal bool RegisterServiceRunningCheck(string name, int ttl)
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             AgentCheckRegistration cr = new AgentCheckRegistration
@@ -86,7 +87,7 @@ namespace Orek
             };
             try
             {
-                _consulClient.Agent.CheckRegister(cr);
+                ConsulClient.Agent.CheckRegister(cr);
                 return true;
             }
             catch (Exception ex)
@@ -110,7 +111,7 @@ namespace Orek
             };
             try
             {
-                _consulClient.Agent.CheckRegister(cr);
+                ConsulClient.Agent.CheckRegister(cr);
                 return true;
             }
             catch (Exception ex)
@@ -121,48 +122,74 @@ namespace Orek
             }
         }
 
-        internal void RegisterSemaphore(ManagedService svc)
-        {
-            MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
-            if (svc.Semaphore != null) try { svc.Semaphore.Destroy(); }
-                catch (SemaphoreInUseException) { }
-                catch (Exception) { }
-            var semaphoreOptions = new SemaphoreOptions(_config.KvPrefix + svc.ConsulServiceName + _config.SemaPrefix,
-                svc.Limit) { SessionName = svc.ConsulServiceName + "_Session", SessionTTL = TimeSpan.FromSeconds(10) };
-            svc.Semaphore = _consulClient.Semaphore(semaphoreOptions);
-        }
 
         internal void CleanUpSemaphore(ManagedService svc)
         {
             MyLogger.Trace("Entering {0} for service: {1}", MethodBase.GetCurrentMethod().Name, svc.ConsulServiceName);
-            MyLogger.Debug("Clean up Semaphore for {0}",svc.ConsulServiceName);
-            if (svc.Semaphore != null)
-                try
+            MyLogger.Debug("Clean up Semaphore for {0}", svc.ConsulServiceName);
+
+            var qr = ConsulClient.KV.List(Config.KvPrefix + Config.SemaPrefix + svc.ConsulServiceName);
+            if (qr.Response != null)
+            {
+                KVPair[] sessions = qr.Response.Where(kv=>!kv.Key.EndsWith("/") && !kv.Key.EndsWith(".lock")).ToArray();
+                foreach (var kv in sessions)
                 {
-                    if (svc.Semaphore.IsHeld)
-                    {
-                        MyLogger.Debug("Semaphore held, releasing");
-                        svc.Semaphore.Release();
-                    }
-                    Thread.Sleep(1000);
-                    MyLogger.Debug("Trying to destroy the semaphore");
-                    svc.Semaphore.Destroy();
-                    MyLogger.Debug("Trying to delete the semaphore tree");
-                    _consulClient.KV.DeleteTree(_config.KvPrefix + svc.ConsulServiceName + _config.SemaPrefix);
+                    var wr = ConsulClient.KV.Delete(kv.Key);
                 }
-                catch (SemaphoreInUseException)
-                {
-                    MyLogger.Debug("Semaphore was still in use");
-                }
+            }
         }
 
         private KVPair MonitorKv(string path, ulong index)
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
             QueryOptions myQueryOptions = new QueryOptions() { WaitIndex = index };
-            var qr = _consulClient.KV.Get(path, myQueryOptions);
+            var qr = ConsulClient.KV.Get(path, myQueryOptions);
             if (qr != null) return qr.Response;
             return null;
+        }
+
+        // ReSharper disable once InconsistentNaming
+        /// <summary>
+        /// Sends the passTTL to consul, catching possible exceptions.
+        /// </summary>
+        /// <param name="checkid">The checkid.</param>
+        /// <param name="note">The note.</param>
+        /// <returns>bool indicating success</returns>
+        private bool SendPassTTL(string checkid, string note)
+        {
+            try
+            {
+                ConsulClient.Agent.PassTTL(checkid, note);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MyLogger.Error("Error sending PassTTL to consul check {0}: {1}", checkid, ex.Message);
+                MyLogger.Debug(ex);
+                return false;
+            }
+        }
+
+        // ReSharper disable once InconsistentNaming
+        /// <summary>
+        /// Sends the failTTL to consul, catching possible exceptions.
+        /// </summary>
+        /// <param name="checkid">The checkid.</param>
+        /// <param name="note">The note.</param>
+        /// <returns>bool indicating success</returns>
+        private bool SendFailTTL(string checkid, string note)
+        {
+            try
+            {
+                ConsulClient.Agent.FailTTL(checkid, note);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MyLogger.Error("Error sending FailTTL to consul check {0}: {1}", checkid, ex.Message);
+                MyLogger.Debug(ex);
+                return false;
+            }
         }
     }
 }

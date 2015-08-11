@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using ThreadState = System.Threading.ThreadState;
 
 namespace Orek
 {
@@ -33,6 +35,7 @@ namespace Orek
                 MyLogger.Trace("thread did not reach stopped state within timeout, aborting thread");
                 _heartbeatThread.Abort();
             }
+            MyLogger.Trace("Exiting " + MethodBase.GetCurrentMethod().Name);
         }
 
         /// <summary>
@@ -43,18 +46,19 @@ namespace Orek
         public void HeartBeat(int ttl)
         {
             MyLogger.Trace("Entering " + MethodBase.GetCurrentMethod().Name);
+            Stopwatch sw = new Stopwatch();
             while (!_shouldStop)
             {
-                try
+                sw.Restart();
+                SendPassTTL(Config.Name + "_Running", "is running");
+                if (sw.ElapsedMilliseconds < (ttl / 2))
                 {
-                    _consulClient.Agent.PassTTL(_config.Name + "_Running", "is running");
+                    Thread.Sleep(Convert.ToInt32((ttl / 2) - sw.ElapsedMilliseconds));
                 }
-                catch (Exception ex)
+                else
                 {
-                    MyLogger.Error("Error sending heartbeat: {0}", ex.Message);
-                    MyLogger.Debug(ex);
+                    MyLogger.Warn("Sending Heartbeat takes longer than 50% of the Heartbeat ttl, Consider increasing the ttl value");
                 }
-                Thread.Sleep(ttl/2);
             } 
             MyLogger.Trace("Exiting " + MethodBase.GetCurrentMethod().Name);
         }
